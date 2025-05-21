@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using FtpLib;
@@ -39,24 +40,18 @@ namespace SendFileToFtp
             string? privateKeyFilePath = null)
         {
 
-            // Validate host non-empty
-            if (string.IsNullOrEmpty(host))
-                throw new ArgumentException("Host may not be empty");
+            // Validate host
+            Result<Uri> uri = Result.Try(
+                () => new UriBuilder(host).Uri,
+                e => $"Bad host address: {e.Message}"
+            );
+            // Validate port
+            Result<int> p = port > 0
+                ? Result.Ok(port)
+                : Result.Error<int>("Invalid port. Port has to be greater or equal to zero");
 
-            // Validate port > 0
-            if (port <= 0)
-                throw new ArgumentException("Invalid port. Port has to be greater or equal to zero");
 
-            // Parse and validate host URI
-            Uri? uri;
-            try
-            {
-                uri = new UriBuilder(host).Uri;
-            }
-            catch (Exception)
-            {
-                throw new ArgumentException("Invalid host uri");
-            }
+
 
             // Parse and validate authentication mode based on enum
             if (!Enum.TryParse(typeof(AuthenticationMode), authentication, out var authenticationMode))
@@ -135,7 +130,7 @@ namespace SendFileToFtp
             {
                 throw new ArgumentException("Failed to upload file", e);
             }
-
+            /*
             // Set up the FTP Client
             var ftpClient = new FtpClient();
             // Try to connect
@@ -150,6 +145,7 @@ namespace SendFileToFtp
             {
                 throw new Exception($"Connect failed: {connection.ConnectError}");
             }
+            */
         }
     }
 
