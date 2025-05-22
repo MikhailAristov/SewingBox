@@ -51,6 +51,8 @@ namespace PlayTests
             Assert.IsNotType<FtpCredentials.Password_>(result);
             Assert.IsType<FtpCredentials.PrivateKey_>(result);
         }
+        [Fact]
+        public async Task CredBadBase64() => await TestCredentialsAsync("mikhail", null, "xyz", null);
 
         [Fact]
         public async Task CredOnlyPath() => await TestCredentialsAsync("mikhail", null, null, "D:/temp.bak", false);

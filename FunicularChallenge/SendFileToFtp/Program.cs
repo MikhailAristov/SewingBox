@@ -87,17 +87,17 @@ namespace SendFileToFtp
                 yield return $"Invalid port {port}. Port has to be greater than zero."; // not "greater or equal to"
         }
 
-        private static IEnumerable<string> ValidateUsername(string u)
+        public static IEnumerable<string> IsNotEmpty(string? str, string descriptor)
         {
             // IsNullOrWhiteSpace() is more robust than IsNullOrEmpty()
-            if(string.IsNullOrWhiteSpace(u))
-                yield return $"No user name specified";
+            if(string.IsNullOrWhiteSpace(str))
+                yield return $"No {descriptor} specified";
         }
 
         private static IEnumerable<string> ValidatePassword(string? p)
         {
             if(p == null)
-                yield return $"No password given";
+                yield return "No password given";
         }
 
         private static IEnumerable<string> ValidateTargetDir(string path)
@@ -124,7 +124,7 @@ namespace SendFileToFtp
         {
 
             // Validate user beforehand because we will need it at two separate points in the pipeline later.
-            var user = username.Validate(ValidateUsername);
+            var user = username.Validate(IsNotEmpty, "user name");
 
             // Generate and return the FTP credentials
             return ImmutableList.Create(
@@ -142,20 +142,15 @@ namespace SendFileToFtp
                 ImmutableList.Create(
 
                     // OPTION 2A: Try to parse the base64 key, if any
-                    Result.Try(
-                        () => {
-                            if(string.IsNullOrWhiteSpace(base64))
-                                throw new ArgumentException("No base64 key given");
-                            return Convert.FromBase64String($"{base64}");
-                        },
-                        e => $"Bad base64 key: {e.Message}"
-                    ),
+                    base64.Validate(IsNotEmpty, "base64 private key")
+                        .TryBind<string?, byte[]>(
+                            b => Convert.FromBase64String($"{b}"),
+                            e => $"Bad base64 key: {e.Message}"),
 
                     // OPTION 2B: Try to load the key from file path, if any
                     await Result.Try(
                         async () => await File.ReadAllBytesAsync($"{key_path}"),
-                        e => $"Cannot load key from path <{key_path}>: {e.Message}"
-                    ))
+                        e => $"Cannot load key from path <{key_path}>: {e.Message}"))
 
                     // Select the first successfully loaded private key, if any
                     .FirstOk(() => "No private key found")
