@@ -13,10 +13,8 @@ namespace PlayTests
         protected void Log(string? msg) => _output.WriteLine($"{msg}");
     }
 
-    public class PlayTestCredentials: PlayTest
+    public class PlayTestCredentials(ITestOutputHelper output) : PlayTest(output)
     {
-        public PlayTestCredentials(ITestOutputHelper output) : base(output) { }
-
         private async Task<Result<FtpCredentials>> TestCredentialsAsync(
             string u, string? p, string? b, string? k, bool should_fail = true)
         {
@@ -68,10 +66,8 @@ namespace PlayTests
 
     }
 
-    public class PlayTestPayload : PlayTest
+    public class PlayTestPayload(ITestOutputHelper output) : PlayTest(output)
     {
-        public PlayTestPayload(ITestOutputHelper output) : base(output) { }
-
         private async Task<Result<byte[]>> TestPayload(string path, bool should_fail = true)
         {
             var result = await Program.GetPayload(path);
