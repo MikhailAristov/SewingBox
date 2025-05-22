@@ -31,8 +31,8 @@ namespace PlayTests
         [Fact]
         public async Task CredNoPassword()
         {
-            var result = await TestCredentialsAsync("mikhail", null, "YWJjZDEyMw==", "D:/temp.bak", false);
-            Assert.True(result.GetValueOrDefault() is FtpCredentials.PrivateKey_);
+            var result = (await TestCredentialsAsync("mikhail", null, "YWJjZDEyMw==", "D:/temp.bak", false)).GetValueOrDefault();
+            Assert.IsType<FtpCredentials.PrivateKey_>(result);
         }
 
         [Fact]
@@ -47,9 +47,9 @@ namespace PlayTests
         [Fact]
         public async Task CredOnlyBase64()
         {
-            var result = await TestCredentialsAsync("mikhail", null, "YWJjZDEyMw==", null, false);
-            Assert.False(result.GetValueOrDefault() is FtpCredentials.Password_);
-            Assert.True(result.GetValueOrDefault() is FtpCredentials.PrivateKey_);
+            var result = (await TestCredentialsAsync("mikhail", null, "YWJjZDEyMw==", null, false)).GetValueOrDefault();
+            Assert.IsNotType<FtpCredentials.Password_>(result);
+            Assert.IsType<FtpCredentials.PrivateKey_>(result);
         }
 
         [Fact]
@@ -59,9 +59,9 @@ namespace PlayTests
         public async Task CredCheckPriority()
         {
             // If both password and private key are valid, password is preferred
-            var result = await TestCredentialsAsync("mikhail", "abcd123", "YWJjZDEyMw==", null, false);
-            Assert.True(result.GetValueOrDefault() is FtpCredentials.Password_);
-            Assert.False(result.GetValueOrDefault() is FtpCredentials.PrivateKey_);
+            var result = (await TestCredentialsAsync("mikhail", "abcd123", "YWJjZDEyMw==", null, false)).GetValueOrDefault();
+            Assert.IsType<FtpCredentials.Password_>(result);
+            Assert.IsNotType<FtpCredentials.PrivateKey_>(result);
         }
 
     }
