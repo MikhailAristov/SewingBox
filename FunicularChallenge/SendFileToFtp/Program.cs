@@ -104,7 +104,7 @@ namespace SendFileToFtp
         {
             if(string.IsNullOrWhiteSpace(path))
                 yield return "No destination directory specified";
-            if(!path.StartsWith("/"))
+            if(!path.StartsWith('/'))
                 yield return "Target path must be absolute relative to FTP server root";
         }
 
