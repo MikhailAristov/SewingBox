@@ -87,37 +87,44 @@ namespace SendFileToFtp
 
         public static async Task<Result<FtpCredentials>> GetCredentials(
             string username,
-            Option<string?> password,
+            string? password,
             string? base64,
             string? key_path
         )
         {
-            static IEnumerable<string> ValidateUsername(string u)
+            static IEnumerable<string> ValidatePassword(string? p)
             {
-                if(string.IsNullOrWhiteSpace(u))
-                    yield return $"Bad user name: {u}";
+                if(p == null)
+                    yield return $"No password given";
             }
 
-            // Validate user
-            var user = username.Validate(ValidateUsername);
+            // Validate user beforehand because we will need it at two separate points in the pipeline later.
+            var user = string.IsNullOrWhiteSpace(username)
+                ? Result.Error<string>($"Bad user name: {username}")
+                : Result.Ok(username);
 
-
-#pragma warning disable CS8604 // Possible null reference argument.
+            // Generate and return the FTP credentials
             return ImmutableList.Create(
 
                 // OPTION 1: Password
                 password
-                    // Convert password from option to result
-                    .ToResult(() => "No password given")
+                    // Perform basic validation on the password
+                    .Validate(ValidatePassword)
+                    // Aggregate with user name
+                    .Aggregate(user)
                     // Create an FTP credential using the password, if any
-                    .Bind<FtpCredentials>(p => FtpCredentials.Password(user.GetValueOrThrow(), p)),
+                    .Bind<FtpCredentials>(t => FtpCredentials.Password(t.Item2, $"{t.Item1}")),
 
                 // OPTION 2: Private key
                 ImmutableList.Create(
 
                     // OPTION 2A: Try to parse the base64 key, if any
                     Result.Try(
-                        () => Convert.FromBase64String($"{base64}"),
+                        () => {
+                            if(string.IsNullOrWhiteSpace(base64))
+                                throw new ArgumentException("No base64 key given");
+                            return Convert.FromBase64String($"{base64}");
+                        },
                         e => $"Bad base64 key: {e.Message}"
                     ),
 
@@ -129,15 +136,16 @@ namespace SendFileToFtp
 
                     // Select the first successfully loaded private key, if any
                     .FirstOk(() => "No private key found")
+                    // Aggregate with user name
+                    .Aggregate(user)
                     // Create an FTP credential with the loaded key, if any
-                    .Bind<FtpCredentials>(bytes => FtpCredentials.PrivateKey(user.GetValueOrThrow(), bytes))
+                    .Bind<FtpCredentials>(t => FtpCredentials.PrivateKey(t.Item2, t.Item1))
 
             ).FirstOk(() => "One of the following MUST be specified: password, base64PrivateKey, or privateKeyFilePath!");
-#pragma warning restore CS8604 // Possible null reference argument.
         }
     }
 
-        enum AuthenticationMode
+    enum AuthenticationMode
     {
         Password,
         PrivateKey

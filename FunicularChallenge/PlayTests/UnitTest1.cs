@@ -1,7 +1,6 @@
+using FtpLib;
 using FunicularSwitch;
-using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using SendFileToFtp;
-using System.Threading.Tasks;
 using Xunit.Abstractions;
 
 namespace PlayTests
@@ -82,23 +81,53 @@ namespace PlayTests
     {
         public PlayTestCredentials(ITestOutputHelper output) : base(output) { }
 
-        private async Task TestCredentialsAsync(string u, string? p, string? b, string? k, bool should_fail) {
+        private async Task<Result<FtpCredentials>> TestCredentialsAsync(
+            string u, string? p, string? b, string? k, bool should_fail = true)
+        {
             var result = await Program.GetCredentials(u, p, b, k);
             Assert.True(result.IsError == should_fail);
             if(should_fail)
                 Log(result.GetErrorOrDefault());
+            return result;
         }
 
         [Fact]
-        public async Task CredGood()
+        public async Task CredGood() => await TestCredentialsAsync("mikhail", "abcd123", "YWJjZDEyMw==", "D:/temp.bak", false);
+
+        [Fact]
+        public async Task CredNoPassword()
         {
-            await TestCredentialsAsync("mikhail", "abcd123", "xxx", "C:/temp.bak", false);
+            var result = await TestCredentialsAsync("mikhail", null, "YWJjZDEyMw==", "D:/temp.bak", false);
+            Assert.True(result.GetValueOrDefault() is FtpCredentials.PrivateKey_);
         }
 
         [Fact]
-        public async Task CredBadUser()
+        public async Task CredBadUser() => await TestCredentialsAsync("    ", "abcd123", "YWJjZDEyMw==", "D:/temp.bak");
+
+        [Fact]
+        public async Task CredEmptyCredentials() => await TestCredentialsAsync("mikhail", null, null, null);
+
+        [Fact]
+        public async Task CredOnlyPassword() => await TestCredentialsAsync("mikhail", "abcd123", null, null, false);
+
+        [Fact]
+        public async Task CredOnlyBase64()
         {
-            await TestCredentialsAsync("    ", "abcd123", "xxx", "C:/temp.bak", false);
+            var result = await TestCredentialsAsync("mikhail", null, "YWJjZDEyMw==", null, false);
+            Assert.False(result.GetValueOrDefault() is FtpCredentials.Password_);
+            Assert.True(result.GetValueOrDefault() is FtpCredentials.PrivateKey_);
+        }
+
+        [Fact]
+        public async Task CredOnlyPath() => await TestCredentialsAsync("mikhail", null, null, "D:/temp.bak", false);
+
+        [Fact]
+        public async Task CredCheckPriority()
+        {
+            // If both password and private key are valid, password is preferred
+            var result = await TestCredentialsAsync("mikhail", "abcd123", "YWJjZDEyMw==", null, false);
+            Assert.True(result.GetValueOrDefault() is FtpCredentials.Password_);
+            Assert.False(result.GetValueOrDefault() is FtpCredentials.PrivateKey_);
         }
     }
 }
