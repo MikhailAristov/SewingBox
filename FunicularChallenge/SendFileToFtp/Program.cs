@@ -36,41 +36,35 @@ namespace SendFileToFtp
             int port = 22,
             string? password = null,
             string? base64PrivateKey = null,
-            string? privateKeyFilePath = null)
-        {
-            var host_uri = GetHostUri(host);
-            var port_val = port.Validate(ValidatePort);
-            var credentials = await GetCredentials(user, password, base64PrivateKey, privateKeyFilePath);
-            var payload = await GetPayload(pathOfFileToSend);
-            var destination = targetFolder.Validate(ValidateTargetDir);
+            string? privateKeyFilePath = null) => await Result
+            // Aggregate the inputs into a single tuple
+            .Aggregate(
+                // Convert host name to URI
+                GetHostUri(host),
+                // Validate port number
+                port.Validate(ValidatePort),
+                // Compose FTP credentials
+                await GetCredentials(user, password, base64PrivateKey, privateKeyFilePath),
+                // Load the file to send
+                await GetPayload(pathOfFileToSend),
+                // Validate target directory
+                targetFolder.Validate(ValidateTargetDir))
+                
+            // Feed the inputs into the main function to try to upload the file
+            .Try<(Uri, int, FtpCredentials, byte[], string)>(
+                async t => await UploadFile(t.Item1, t.Item2, t.Item3, t.Item4, t.Item5),
+                e => $"Failed to upload:{Environment.NewLine}{e.Message}")
 
-            var result = await Result.Try(
-                async () => {
-                    // Set up the FTP Client
-                    var ftpClient = new FtpClient();
-
-                    // Try to connect
-                    using var connection = await ftpClient.Connect(
-                        host_uri.GetValueOrThrow(),
-                        port_val.GetValueOrThrow(),
-                        credentials.GetValueOrThrow());
-
-                    // Check the connection
-                    if(!connection.IsConnected)
-                        throw new IOException($"Connection failed: {connection.ConnectError}");
-
-                    // Try to upload the file
-                    // NOTE: The magic uploader knows the target file name without ever being told :D
-                    await ftpClient.UploadFile(connection,
-                        payload.GetValueOrThrow(),
-                        destination.GetValueOrThrow());
+            // Assess the outcome
+            .Match(
+                ok => {
+                    Console.WriteLine("File uploaded successfully");
+                    return 0;
                 },
-                e => $"Failed to upload:{Environment.NewLine}{e.Message}"
-            );
-
-            Console.WriteLine(result.Match(ok => "File uploaded successfully", error => error));
-            return result.Match(ok => 0, error => 1);
-        }
+                error => {
+                    Console.WriteLine(error);
+                    return 1;
+                });
 
         private static IEnumerable<string> ValidatePort(int port)
         {
@@ -166,6 +160,23 @@ namespace SendFileToFtp
             return await Result<byte[]>.Try(
                 async () => await File.ReadAllBytesAsync(path),
                 e => $"Failed to load <{path}>: {e.Message}");
+        }
+
+        public static async Task UploadFile(Uri host, int port, FtpCredentials cred, byte[] payload, string dest)
+        {
+            // Set up the FTP Client
+            var ftpClient = new FtpClient();
+
+            // Try to connect
+            using var connection = await ftpClient.Connect(host, port, cred);
+
+            // Check the connection
+            if(!connection.IsConnected)
+                throw new IOException($"Connection failed: {connection.ConnectError}");
+
+            // Try to upload the file
+            // NOTE: The magic uploader knows the target file name without ever being told :D
+            await ftpClient.UploadFile(connection, payload, dest);
         }
     }
 
