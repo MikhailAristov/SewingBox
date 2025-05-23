@@ -46,7 +46,7 @@ namespace SendFileToFtp
                 // Compose FTP credentials
                 await GetCredentials(user, password, base64PrivateKey, privateKeyFilePath),
                 // Load the file to send
-                await LoadFileContents(pathOfFileToSend),
+                await LoadFile(pathOfFileToSend, "file to send"),
                 // Validate target directory
                 targetFolder
                     .Validate(IsNotEmpty, "target folder")
@@ -98,7 +98,7 @@ namespace SendFileToFtp
                         // Option 2a: Key passed as base64
                         LoadKeyFromBase64(k64),
                         // Option 2b: Key passed as file path
-                        await LoadKeyFromFile(kPath))
+                        await LoadFile(kPath, "private key file"))
                     .FirstOk(() => "")) // Error message empty, because list guaranteed non-empty
             ).FirstOk(() => ""); // Ditto
         }
@@ -133,20 +133,14 @@ namespace SendFileToFtp
                 b => Convert.FromBase64String($"{b}"),
                 e => $"Bad base64 key: {e.Message}");
 
-        // TODO Merge the following two methods!
-        private async static Task<Result<byte[]>> LoadKeyFromFile(string? filePath) => await filePath
-            // Validate path is not empty
-            .Validate(IsNotEmpty, "private key file path")
-            // Try to load the file, return error on failure
+
+        public async static Task<Result<byte[]>> LoadFile(string? filePath, string descriptor) => await filePath
+            // Validate that the path is not empty
+            .Validate(IsNotEmpty, descriptor)
+            // Try to load the file and return its contents
             .TryBind<string?, byte[]>(
                 async p => await File.ReadAllBytesAsync($"{p}"),
-                e => $"Cannot load key from path <{filePath}>: {e.Message}");
-
-        public static async Task<Result<byte[]>> LoadFileContents(string filePath) => await filePath
-            .Validate(IsNotEmpty, "file path to send")
-            .TryBind<string, byte[]>(
-                async p => await File.ReadAllBytesAsync(p),
-                e => $"Failed to load <{filePath}>: {e.Message}");
+                e => $"Failed to load the {descriptor} <{filePath}>:{Environment.NewLine}{e.Message}");
 
         private static IEnumerable<string> ValidateTargetDir(string path)
         {

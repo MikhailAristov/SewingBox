@@ -72,7 +72,7 @@ namespace PlayTests
     {
         private async Task<Result<byte[]>> TestPayload(string path, bool should_fail = true)
         {
-            var result = await Program.LoadFileContents(path);
+            var result = await Program.LoadFile(path, "file to send");
             Assert.True(result.IsError == should_fail);
             if(should_fail)
                 Log(result.GetErrorOrDefault());
