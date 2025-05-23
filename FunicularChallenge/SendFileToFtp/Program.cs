@@ -122,45 +122,51 @@ namespace SendFileToFtp
             string? base64,
             string? key_path)
         {
-
-            // Validate user beforehand because we will need it at two separate points in the pipeline later.
-            var user = username.Validate(IsNotEmpty, "user name");
-
-            // Generate and return the FTP credentials
             return ImmutableList.Create(
-
-                // OPTION 1: Password
-                password
-                    // Perform basic validation on the password
-                    .Validate(ValidatePassword)
-                    // Aggregate with user name
-                    .Aggregate(user)
-                    // Create an FTP credential using the password, if any
-                    .Bind<FtpCredentials>(t => FtpCredentials.Password(t.Item2, $"{t.Item1}")),
-
-                // OPTION 2: Private key
-                ImmutableList.Create(
-
-                    // OPTION 2A: Try to parse the base64 key, if any
-                    base64.Validate(IsNotEmpty, "base64 private key")
-                        .TryBind<string?, byte[]>(
-                            b => Convert.FromBase64String($"{b}"),
-                            e => $"Bad base64 key: {e.Message}"),
-
-                    // OPTION 2B: Try to load the key from file path, if any
-                    await Result.Try(
-                        async () => await File.ReadAllBytesAsync($"{key_path}"),
-                        e => $"Cannot load key from path <{key_path}>: {e.Message}"))
-
-                    // Select the first successfully loaded private key, if any
-                    .FirstOk(() => "No private key found")
-                    // Aggregate with user name
-                    .Aggregate(user)
-                    // Create an FTP credential with the loaded key, if any
-                    .Bind<FtpCredentials>(t => FtpCredentials.PrivateKey(t.Item2, t.Item1))
-
-            ).FirstOk(() => "One of the following MUST be specified: password, base64PrivateKey, or privateKeyFilePath!");
+                // Option 1: Login with password
+                GetPasswordCred(username, password),
+                // Option 2: Login with private key
+                GetPrivateKeyCred(username,
+                    ImmutableList.Create(
+                        // Option 2a: Key passed as base64
+                        GetBase64Key(base64),
+                        // Option 2b: Key passed as file path
+                        await LoadKeyFile(key_path))
+                    .FirstOk(() => ""))
+            ).FirstOk(() => "");
         }
+
+        private static Result<FtpCredentials> GetPasswordCred(string u, string? p) => p
+            // Perform basic validation on the password
+            .Validate(ValidatePassword)
+            // Aggregate with user name
+            .Aggregate(u.Validate(IsNotEmpty, "user name"))
+            // Create an FTP credential using the password, if any
+            .Bind<FtpCredentials>(t => FtpCredentials.Password(t.Item2, $"{t.Item1}"));
+
+        private static Result<FtpCredentials> GetPrivateKeyCred(string u, Result<byte[]> k) => u
+            // Validate user name
+            .Validate(IsNotEmpty, "user name")
+            // Append private key
+            .Aggregate(k)
+            // Bind to credentials
+            .Bind<FtpCredentials>(t => FtpCredentials.PrivateKey(t.Item1, t.Item2));
+
+        private static Result<byte[]> GetBase64Key(string? k) => k
+            // Validate key is not empty
+            .Validate(IsNotEmpty, "base64 private key")
+            // Try to parse it, returning error on failure
+            .TryBind<string?, byte[]>(
+                b => Convert.FromBase64String($"{b}"),
+                e => $"Bad base64 key: {e.Message}");
+
+        private async static Task<Result<byte[]>> LoadKeyFile(string? p) => await p
+            // Validate path is not empty
+            .Validate(IsNotEmpty, "private key file path")
+            // Try to load the file, return error on failure
+            .TryBind<string?, byte[]>(
+                async key_path => await File.ReadAllBytesAsync($"{key_path}"),
+                e => $"Cannot load key from path <{p}>: {e.Message}");
 
         public static async Task<Result<byte[]>> GetPayload(string path)
         {
