@@ -68,17 +68,8 @@ namespace SendFileToFtp
                 e => $"Failed to upload:{Environment.NewLine}{e.Message}"
             );
 
-            // Finalize the output
-            if(result.IsError)
-            {
-                Console.WriteLine(result.GetErrorOrDefault());
-                return 1;
-            }
-            else
-            {
-                Console.WriteLine("File uploaded successfully");
-                return 0;
-            }
+            Console.WriteLine(result.Match(ok => "File uploaded successfully", error => error));
+            return result.Match(ok => 0, error => 1);
         }
 
         private static IEnumerable<string> ValidatePort(int port)
