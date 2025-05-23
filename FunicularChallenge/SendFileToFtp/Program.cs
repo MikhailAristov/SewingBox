@@ -46,9 +46,11 @@ namespace SendFileToFtp
                 // Compose FTP credentials
                 await GetCredentials(user, password, base64PrivateKey, privateKeyFilePath),
                 // Load the file to send
-                await GetPayload(pathOfFileToSend),
+                await LoadFileContents(pathOfFileToSend),
                 // Validate target directory
-                targetFolder.Validate(ValidateTargetDir))
+                targetFolder
+                    .Validate(IsNotEmpty, "target folder")
+                    .Validate(ValidateTargetDir))
                 
             // Feed the inputs into the main function to try to upload the file
             .Try<(Uri, int, FtpCredentials, byte[], string)>(
@@ -66,12 +68,6 @@ namespace SendFileToFtp
                     return 1;
                 });
 
-        private static IEnumerable<string> ValidatePort(int port)
-        {
-            if(port <= 0)
-                yield return $"Invalid port {port}. Port has to be greater than zero."; // not "greater or equal to"
-        }
-
         public static IEnumerable<string> IsNotEmpty(string? str, string descriptor)
         {
             // IsNullOrWhiteSpace() is more robust than IsNullOrEmpty()
@@ -79,65 +75,57 @@ namespace SendFileToFtp
                 yield return $"No {descriptor} specified";
         }
 
-        private static IEnumerable<string> ValidatePassword(string? p)
+        public static Result<Uri> GetHostUri(string path) => path
+            .Validate(IsNotEmpty, "host address")
+            .TryBind<string, Uri>(
+                p => new UriBuilder(p).Uri,
+                e => $"Bad host address ({path}): {e.Message}");
+
+        private static IEnumerable<string> ValidatePort(int port)
         {
-            if(p == null)
-                yield return "No password given";
+            if(port <= 0) // not "greater or equal to"
+                yield return $"Invalid port {port}. Port has to be greater than zero.";
         }
 
-        private static IEnumerable<string> ValidateTargetDir(string path)
-        {
-            if(string.IsNullOrWhiteSpace(path))
-                yield return "No destination directory specified";
-            if(!path.StartsWith('/'))
-                yield return "Target path must be absolute relative to FTP server root";
-        }
-
-        public static Result<Uri> GetHostUri(string path)
-        {
-            return Result<Uri>.Try(
-                () => new UriBuilder(path).Uri,
-                e => $"Bad host address ({path}): {e.Message}"
-            );
-        }
-
-        public static async Task<Result<FtpCredentials>> GetCredentials(
-            string username,
-            string? password,
-            string? base64,
-            string? key_path)
+        public static async Task<Result<FtpCredentials>> GetCredentials(string user, string? pwd, string? k64, string? kPath)
         {
             return ImmutableList.Create(
                 // Option 1: Login with password
-                GetPasswordCred(username, password),
+                GetPasswordCred(user, pwd),
                 // Option 2: Login with private key
-                GetPrivateKeyCred(username,
+                GetPrivateKeyCred(user,
                     ImmutableList.Create(
                         // Option 2a: Key passed as base64
-                        GetBase64Key(base64),
+                        LoadKeyFromBase64(k64),
                         // Option 2b: Key passed as file path
-                        await LoadKeyFile(key_path))
-                    .FirstOk(() => ""))
-            ).FirstOk(() => "");
+                        await LoadKeyFromFile(kPath))
+                    .FirstOk(() => "")) // Error message empty, because list guaranteed non-empty
+            ).FirstOk(() => ""); // Ditto
         }
 
-        private static Result<FtpCredentials> GetPasswordCred(string u, string? p) => p
+        private static Result<FtpCredentials> GetPasswordCred(string user, string? pwd) => pwd
             // Perform basic validation on the password
             .Validate(ValidatePassword)
             // Aggregate with user name
-            .Aggregate(u.Validate(IsNotEmpty, "user name"))
+            .Aggregate(user.Validate(IsNotEmpty, "user name"))
             // Create an FTP credential using the password, if any
             .Bind<FtpCredentials>(t => FtpCredentials.Password(t.Item2, $"{t.Item1}"));
 
-        private static Result<FtpCredentials> GetPrivateKeyCred(string u, Result<byte[]> k) => u
+        private static IEnumerable<string> ValidatePassword(string? pwd)
+        {
+            if(pwd == null)
+                yield return "No password given";
+        }
+
+        private static Result<FtpCredentials> GetPrivateKeyCred(string user, Result<byte[]> key) => user
             // Validate user name
             .Validate(IsNotEmpty, "user name")
             // Append private key
-            .Aggregate(k)
+            .Aggregate(key)
             // Bind to credentials
             .Bind<FtpCredentials>(t => FtpCredentials.PrivateKey(t.Item1, t.Item2));
 
-        private static Result<byte[]> GetBase64Key(string? k) => k
+        private static Result<byte[]> LoadKeyFromBase64(string? k64) => k64
             // Validate key is not empty
             .Validate(IsNotEmpty, "base64 private key")
             // Try to parse it, returning error on failure
@@ -145,21 +133,25 @@ namespace SendFileToFtp
                 b => Convert.FromBase64String($"{b}"),
                 e => $"Bad base64 key: {e.Message}");
 
-        private async static Task<Result<byte[]>> LoadKeyFile(string? p) => await p
+        // TODO Merge the following two methods!
+        private async static Task<Result<byte[]>> LoadKeyFromFile(string? filePath) => await filePath
             // Validate path is not empty
             .Validate(IsNotEmpty, "private key file path")
             // Try to load the file, return error on failure
             .TryBind<string?, byte[]>(
-                async key_path => await File.ReadAllBytesAsync($"{key_path}"),
-                e => $"Cannot load key from path <{p}>: {e.Message}");
+                async p => await File.ReadAllBytesAsync($"{p}"),
+                e => $"Cannot load key from path <{filePath}>: {e.Message}");
 
-        public static async Task<Result<byte[]>> GetPayload(string path)
+        public static async Task<Result<byte[]>> LoadFileContents(string filePath) => await filePath
+            .Validate(IsNotEmpty, "file path to send")
+            .TryBind<string, byte[]>(
+                async p => await File.ReadAllBytesAsync(p),
+                e => $"Failed to load <{filePath}>: {e.Message}");
+
+        private static IEnumerable<string> ValidateTargetDir(string path)
         {
-            if(string.IsNullOrWhiteSpace(path))
-                return Result<byte[]>.Error("No source file path given");
-            return await Result<byte[]>.Try(
-                async () => await File.ReadAllBytesAsync(path),
-                e => $"Failed to load <{path}>: {e.Message}");
+            if(!path.StartsWith('/'))
+                yield return "Target path must be absolute relative to FTP server root";
         }
 
         public static async Task UploadFile(Uri host, int port, FtpCredentials cred, byte[] payload, string dest)
@@ -174,8 +166,7 @@ namespace SendFileToFtp
             if(!connection.IsConnected)
                 throw new IOException($"Connection failed: {connection.ConnectError}");
 
-            // Try to upload the file
-            // NOTE: The magic uploader knows the target file name without ever being told :D
+            // The magic uploader knows the target file name without ever being told what it is :D
             await ftpClient.UploadFile(connection, payload, dest);
         }
     }
